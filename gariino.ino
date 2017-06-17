@@ -17,8 +17,9 @@
 #define pin_roda_esq_fren 10 // motor rodas esquerda frente
 #define pin_roda_dir_tras 6 // motor rodas direita trás
 #define pin_roda_dir_fren 9 // motor rodas direita frente
-#define tempo_giro 5000 // 1 gira o carro em 45 graus
-#define velocidade_rodas 255 //
+#define tempo_giro 2000 // tempo que as rodas ficam ligadas
+#define velocidade_rodas 105 // velocidade do motor das rodas
+#define distancia_para_pegar 15 // distancia (cm) que o objeto deve estar para ser pego pela garra
 
 int pos_garras = 0; // posicao do motor das garras
 int pos_varredor = 0; // posicao do motor do sensor
@@ -30,14 +31,16 @@ boolean primeiro_loop = true; // flag de primeiro loop
 unsigned int distancia = 0; // distância do objeto
 boolean angulo_limite_atingido = false; // flag para saber se chegou no ângulo máx do varredor
 char sentido_rotacao; // indica para qual lado o carro deve girar para se alinhar ao objeto
+int avancos = 0; // quantas vezes o carro foi para a frente
 
 // Inicia sonar e motores
 NewPing sonar(pin_trigger, pin_echo, max_distancia_sonar);
 Servo varredor;
 Servo garras;
 
-// Funções
+// Protoypes
 void gira_servo();
+void calcula_distancia();
 void varredura();
 int pos_media();
 void alinha_carro();
@@ -45,6 +48,7 @@ void pega_objeto();
 void rotacao_direita();
 void rotacao_esquerda();
 void avanca();
+void volta();
 
 // -----------------------------------------------------------------------------
 // SETUP
@@ -79,7 +83,7 @@ void setup () {
 void loop () {  
   varredura(); // TODO: se não encontrar...girar o carro e realizar nova busca
 
-  pos_objeto = round((pos_inicio_visao + pos_fim_visao) / 2);
+  pos_objeto = round((pos_inicio_visao + pos_fim_visao) / 2); // real posicao do objeto...meio do range (inicio-fim)
   Serial.print("Posicao do objeto (meio): ");
   Serial.println(pos_objeto);
 
@@ -95,6 +99,13 @@ void loop () {
   alinha_carro(pos_objeto, sentido_rotacao);
 
   pega_objeto();
+}
+
+// -----------------------------------------------------------------------------
+// CALCULA DISTANCIA ENTRE SONAR E OBJETO
+// -----------------------------------------------------------------------------
+void calcula_distancia () {
+  distancia = sonar.ping_cm(max_distancia_sonar);
 }
 
 
@@ -115,7 +126,7 @@ void varredura () {
       varredor.write(pos);              
       delay(descanso);
          
-      distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto
+      calcula_distancia();
 
       // se tiver encontrado algum objeto
       if (distancia != 0) {
@@ -134,7 +145,8 @@ void varredura () {
       for (pos = pos_sonar_max; pos >= pos_sonar_min; pos -= 1) {       
         varredor.write(pos);              
         delay(descanso);
-        distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto 
+        
+        calcula_distancia();
         
         if (distancia != 0) {
           loop_do_encontro = 2;
@@ -161,7 +173,8 @@ void varredura () {
       for (pos = varredor.read(); pos <= pos_sonar_max; pos += 1) { 
         varredor.write(pos);              
         delay(descanso);
-        distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto 
+        
+        calcula_distancia();
         
         if (distancia == 0)  break; // sai do loop for e do while...já que a distância == 0                           
         
@@ -176,7 +189,8 @@ void varredura () {
       for (pos = varredor.read(); pos >= pos_sonar_min; pos -= 1) { 
         varredor.write(pos);              
         delay(descanso);
-        distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto 
+        
+        calcula_distancia();
         
         if (distancia == 0) break; // sai do loop for...já que a distância == 0    
 
@@ -194,16 +208,6 @@ void varredura () {
   Serial.println(pos_fim_visao);
 }
 
-// -----------------------------------------------------------------------------
-// CALCULA O ANGULO EM QUE O OBJETO SE ENCONTRA (MEIO ENTRE POS_INICIO E POS_FINAL)
-// -----------------------------------------------------------------------------
-//int pos_media (int pos_inicial, int pos_final) {
-//  if (pos_inicial > pos_final) {
-//    return round(pos_inicial + pos_final) / 2);
-//  } else {
-//    return round((pos_final / pos_inicial);    
-//  }
-//}
 
 // -----------------------------------------------------------------------------
 // ALINHA O CARRO COM O VARREDOR
@@ -245,15 +249,38 @@ void rotacao_esquerda (int angulo) {
 }
 
 // -----------------------------------------------------------------------------
-// GIRA O CARRO (NO MESMO EIXO) PARA A ESQUERDA
+// CARRO AVANCA
 // -----------------------------------------------------------------------------
 void avanca () {
   Serial.println("Iniciando avanca()");
-  analogWrite(pin_roda_esq_fren, velocidade_rodas);
-  analogWrite(pin_roda_dir_fren, velocidade_rodas);
-  delay(tempo_giro);
-  analogWrite(pin_roda_esq_fren, 0);
-  analogWrite(pin_roda_dir_fren, 0);
+  
+  while (distancia > distancia_para_pegar) {
+    analogWrite(pin_roda_esq_fren, velocidade_rodas);
+    analogWrite(pin_roda_dir_fren, velocidade_rodas);
+    delay(tempo_giro);
+    analogWrite(pin_roda_esq_fren, 0);
+    analogWrite(pin_roda_dir_fren, 0);
+    avancos++;
+    calcula_distancia();
+  }  
+}
+
+// -----------------------------------------------------------------------------
+// CARRO VOLTA PARA A PARTIDA
+// -----------------------------------------------------------------------------
+void volta () {
+  Serial.println("Iniciando volta()");
+  
+  while (avancos > 0) {
+    analogWrite(pin_roda_esq_fren, velocidade_rodas);
+    analogWrite(pin_roda_dir_fren, velocidade_rodas);
+    delay(tempo_giro);
+    analogWrite(pin_roda_esq_fren, 0);
+    analogWrite(pin_roda_dir_fren, 0);
+    avancos--;
+  }  
+
+  // TODO: verificar se o objeto nao foi perdido na volta (garra soltou)
 }
 
 // -----------------------------------------------------------------------------
@@ -261,6 +288,7 @@ void avanca () {
 // -----------------------------------------------------------------------------
 void pega_objeto () {
   Serial.println("Iniciando pega_objeto()");
-    // TODO: verificar se a pinça pegou algo ou se escapuliu
+    garras.write(180);
+    volta();
 }
 
