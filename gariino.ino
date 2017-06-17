@@ -1,4 +1,3 @@
-#include <AFMotor.h> 
 #include <NewPing.h>
 #include <Servo.h>
 #include <math.h>
@@ -9,15 +8,17 @@
 #define pin_echo 15 // echo sonar
 #define max_distancia_sonar 20 // máxima distância a ser escaneada pelo sonar
 #define max_amplitude_sonar 5 // amplitude da varredura em graus
-#define pos_sonar_mid 65 // meio ("90 graus") do varredor
+#define pos_sonar_mid 63 // meio ("90 graus") do varredor
 #define pos_sonar_min pos_sonar_mid - max_amplitude_sonar // angulação mínima para varredura
 #define pos_sonar_max pos_sonar_mid + max_amplitude_sonar // angulação máxima para varredura
 #define pin_garras 3 // motor servo da gara
 #define pin_varredor 5 // motor servo do sonar
-#define pin_rodas_esq 6 // motor rodas da esquerda
-#define pin_rodas_dir 9 // motor rodas da direita
-#define tempo_giro 1 // gira o carro em 45 graus
-#define velocidade_rodas 106 //
+#define pin_roda_esq_tras 11 // motor rodas esquerda trás
+#define pin_roda_esq_fren 10 // motor rodas esquerda frente
+#define pin_roda_dir_tras 6 // motor rodas direita trás
+#define pin_roda_dir_fren 9 // motor rodas direita frente
+#define tempo_giro 5000 // 1 gira o carro em 45 graus
+#define velocidade_rodas 255 //
 
 int pos_garras = 0; // posicao do motor das garras
 int pos_varredor = 0; // posicao do motor do sensor
@@ -34,8 +35,6 @@ char sentido_rotacao; // indica para qual lado o carro deve girar para se alinha
 NewPing sonar(pin_trigger, pin_echo, max_distancia_sonar);
 Servo varredor;
 Servo garras;
-AF_DCMotor rodas_esquerda(pin_rodas_esq);
-AF_DCMotor rodas_direita(pin_rodas_dir);
 
 // Funções
 void gira_servo();
@@ -62,14 +61,14 @@ void setup () {
 
   // Inicia Varredor
   varredor.attach(pin_varredor);
-  varredor.write(pos_sonar_min); 
+  varredor.write(pos_sonar_mid); 
   Serial.println("Varredor iniciado");
   
   // Inicia motores das rodas
-  rodas_esquerda.setSpeed(velocidade_rodas);
-  rodas_direita.setSpeed(velocidade_rodas);
-//  pinMode(pin_rodas_esq, OUTPUT);
-//  pinMode(pin_rodas_dir, OUTPUT);
+  pinMode(pin_roda_esq_tras, OUTPUT);
+  pinMode(pin_roda_esq_fren, OUTPUT);
+  pinMode(pin_roda_dir_tras, OUTPUT);
+  pinMode(pin_roda_dir_fren, OUTPUT);
   Serial.println("Rodas iniciadas");
 }
 
@@ -80,32 +79,22 @@ void setup () {
 void loop () {  
   varredura(); // TODO: se não encontrar...girar o carro e realizar nova busca
 
-  pos_objeto = pos_media(pos_inicio_visao, pos_fim_visao);
-
-  Serial.print("Início da visão: ");
-  Serial.println(pos_inicio_visao);
-  Serial.print("Fim da visão: ");
-  Serial.println(pos_fim_visao);
-
-//   fecha garra
-//  garras.write(180);
-//  delay(1000);  
-//  garras.write(0);
+  pos_objeto = round((pos_inicio_visao + pos_fim_visao) / 2);
+  Serial.print("Posicao do objeto (meio): ");
+  Serial.println(pos_objeto);
 
   // decide pra qual lado o carro deve girar
   if (pos_objeto > pos_sonar_mid) {
-    sentido_rotacao = "d"; // vira pra direita
+    sentido_rotacao = 'd'; // vira pra direita
   } else if (pos_objeto < pos_sonar_mid) {
-    sentido_rotacao = "e"; // vira pra esquerda
+    sentido_rotacao = 'e'; // vira pra esquerda
   } else {
-    sentido_rotacao = "c"; // não vira...vai reto
+    sentido_rotacao = 'c'; // não vira...vai reto
   }
   
   alinha_carro(pos_objeto, sentido_rotacao);
 
   pega_objeto();
-
-  distancia = 0; // TODO: apagar após teste
 }
 
 
@@ -116,16 +105,19 @@ void varredura () {
   int pos;
   int descanso = 90; // período para o motor realizar o movimento
 
+  Serial.println("---------------");
   Serial.println("Iniciando varredura()");
 
-  // Encontra a posição inicial do objeto
+  // encontra a posição inicial do objeto
   while (distancia == 0) {
-    // Varredura da esquerda pra direita (angulo crescente)  
+    // varredura da esquerda pra direita (angulo crescente)  
     for (pos = pos_sonar_min; pos <= pos_sonar_max; pos += 1) {       
       varredor.write(pos);              
-      delay(descanso);   
+      delay(descanso);
+         
       distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto
-      
+
+      // se tiver encontrado algum objeto
       if (distancia != 0) {
         loop_do_encontro = 1;
         Serial.print("Objeto encontrado no ângulo: ");
@@ -136,8 +128,9 @@ void varredura () {
       }
     }
 
-    if (distancia != 0) {
-    // Varredura da direita pra esquerda (angulo decrescente)  
+    // se não tiver encontrado algum objeto
+    if (distancia == 0) {
+      // varredura da direita pra esquerda (angulo decrescente)  
       for (pos = pos_sonar_max; pos >= pos_sonar_min; pos -= 1) {       
         varredor.write(pos);              
         delay(descanso);
@@ -155,43 +148,37 @@ void varredura () {
     }
   }
 
-  // Salva a posição inicial do objeto
+  // posição inicial onde o objeto foi detectado
   pos_inicio_visao = varredor.read();
-
+  Serial.print("Primeira detectção do objeto: ");
+  Serial.println(pos_inicio_visao);
 
   // Encontra a posição final do objeto (ou vai até o final)
-  while (distancia != 0 || !angulo_limite_atingido) { 
-    // O objeto foi encontrado no Loop 1 (angulação crescente)
+  while (distancia != 0 && !angulo_limite_atingido) { 
+    // objeto encontrado no loop 1 (angulação crescente)
     if (loop_do_encontro == 1) {
-      // Continua a "varreção" (crescendo o ângulo)
+      // continua a "varreção" (crescendo o ângulo)f
       for (pos = varredor.read(); pos <= pos_sonar_max; pos += 1) { 
         varredor.write(pos);              
         delay(descanso);
         distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto 
         
-        if (distancia == 0) {
-          Serial.print("Objeto perdido no ângulo: ");
-          Serial.println(pos);
-          Serial.print("Distância: ");
-          Serial.println(distancia);
-          break; // sai do loop for                           
+        if (distancia == 0)  break; // sai do loop for e do while...já que a distância == 0                           
+        
+        if (pos == pos_sonar_max) {
+          Serial.println("O objeto foi visto até o final da amplitude de varredura.");
+          angulo_limite_atingido = true;
         }
       }
-    // O objeto foi encontrado no Loop 2 (angulação decrescente)
+    // objeto encontrado no loop 2 (angulação decrescente)
     } else if (loop_do_encontro == 2) {
-      // Continua a "varreção" (decrescendo o ângulo)  
+      // continua a "varreção" (decrescendo o ângulo)  
       for (pos = varredor.read(); pos >= pos_sonar_min; pos -= 1) { 
         varredor.write(pos);              
         delay(descanso);
         distancia = sonar.ping_cm(max_distancia_sonar); // tenta encontrar distância até o objeto 
         
-        if (distancia == 0) {
-          Serial.print("Objeto perdido no ângulo: ");
-          Serial.println(pos);
-          Serial.print("Distância: ");
-          Serial.println(distancia);
-          break; // sai do loop for                           
-        }
+        if (distancia == 0) break; // sai do loop for...já que a distância == 0    
 
         if (pos == pos_sonar_min) {
           Serial.println("O objeto foi visto até o final da amplitude de varredura.");
@@ -201,19 +188,22 @@ void varredura () {
     }    
   }
   
+  // posição final onde o objeto foi detectado ou final da amplitude de varredura
   pos_fim_visao = varredor.read();
+  Serial.print("Última detecção do objeto: ");
+  Serial.println(pos_fim_visao);
 }
 
 // -----------------------------------------------------------------------------
 // CALCULA O ANGULO EM QUE O OBJETO SE ENCONTRA (MEIO ENTRE POS_INICIO E POS_FINAL)
 // -----------------------------------------------------------------------------
-int pos_media (int pos_inicial, int pos_final) {
-  if (pos_inicial > pos_final) {
-    return round(pos_inicial / pos_final);
-  } else {
-    return round(pos_final / pos_inicial);    
-  }
-}
+//int pos_media (int pos_inicial, int pos_final) {
+//  if (pos_inicial > pos_final) {
+//    return round(pos_inicial + pos_final) / 2);
+//  } else {
+//    return round((pos_final / pos_inicial);    
+//  }
+//}
 
 // -----------------------------------------------------------------------------
 // ALINHA O CARRO COM O VARREDOR
@@ -228,8 +218,6 @@ void alinha_carro (int pos_alvo, char sentido) {
   } else {  
     avanca();
   }
-  
-  // TODO: alinhar o carro com sensor...angulo do sonar == 0
 }
 
 // -----------------------------------------------------------------------------
@@ -237,11 +225,11 @@ void alinha_carro (int pos_alvo, char sentido) {
 // -----------------------------------------------------------------------------
 void rotacao_direita (int angulo) {
   Serial.println("Iniciando rotacao_direita()");
-  rodas_direita.run(BACKWARD);
-  rodas_esquerda.run(FORWARD);
-  delay(tempo_giro);  
-  rodas_direita.run(RELEASE);  // TODO: APAGAR APÓS TESTE 
-  rodas_esquerda.run(RELEASE);  // TODO: APAGAR APÓS TESTE 
+  analogWrite(pin_roda_dir_tras, velocidade_rodas);
+  analogWrite(pin_roda_esq_fren, velocidade_rodas);
+  delay(tempo_giro);
+  analogWrite(pin_roda_dir_tras, 0);
+  analogWrite(pin_roda_esq_fren, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -249,11 +237,11 @@ void rotacao_direita (int angulo) {
 // -----------------------------------------------------------------------------
 void rotacao_esquerda (int angulo) {
   Serial.println("Iniciando rotacao_esquerda()");
-  rodas_direita.run(FORWARD);
-  rodas_esquerda.run(BACKWARD);
-  delay(tempo_giro);  
-  rodas_direita.run(RELEASE);  // TODO: APAGAR APÓS TESTE 
-  rodas_esquerda.run(RELEASE); // TODO: APAGAR APÓS TESTE 
+  analogWrite(pin_roda_esq_tras, velocidade_rodas);
+  analogWrite(pin_roda_dir_fren, velocidade_rodas);
+  delay(tempo_giro);
+  analogWrite(pin_roda_esq_tras, 0);
+  analogWrite(pin_roda_dir_fren, 0);
 }
 
 // -----------------------------------------------------------------------------
@@ -261,16 +249,12 @@ void rotacao_esquerda (int angulo) {
 // -----------------------------------------------------------------------------
 void avanca () {
   Serial.println("Iniciando avanca()");
-  rodas_direita.run(FORWARD);
-  rodas_esquerda.run(FORWARD);
-  delay(1000);  
-  // TODO: APAGAR APÓS TESTE 
-  rodas_direita.run(RELEASE);
-  rodas_esquerda.run(RELEASE);
+  analogWrite(pin_roda_esq_fren, velocidade_rodas);
+  analogWrite(pin_roda_dir_fren, velocidade_rodas);
+  delay(tempo_giro);
+  analogWrite(pin_roda_esq_fren, 0);
+  analogWrite(pin_roda_dir_fren, 0);
 }
-
-
-
 
 // -----------------------------------------------------------------------------
 // PEGA O OBJETO
