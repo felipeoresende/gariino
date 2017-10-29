@@ -105,8 +105,10 @@ void loop () {
 // CALCULA DISTANCIA ENTRE SONAR E OBJETO
 // -----------------------------------------------------------------------------
 void calcula_distancia () {
-  distancia = sonar.ping_cm(max_distancia_sonar);
- //Calcula a distancia em centimetros
+  //Le os dados do sensor, com o tempo de retorno do sinal
+  long microsec = ultrasonic.timing();
+  
+  //Calcula a distancia em centimetros
   cmMsec = ultrasonic.convert(microsec, Ultrasonic::CM); 
 
   //Calcula a distancia em polegadas
