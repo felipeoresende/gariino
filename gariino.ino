@@ -56,7 +56,7 @@ void volta();
 void setup () {
   Serial.begin(baud_rate);
 
-  delay(1500);
+  delay(1000);
   
   // Inicia garras
   garras.attach(pin_garras);
@@ -106,6 +106,33 @@ void loop () {
 // -----------------------------------------------------------------------------
 void calcula_distancia () {
   distancia = sonar.ping_cm(max_distancia_sonar);
+ //Calcula a distancia em centimetros
+  cmMsec = ultrasonic.convert(microsec, Ultrasonic::CM); 
+
+  //Calcula a distancia em polegadas
+  inMsec = ultrasonic.convert(microsec, Ultrasonic::IN); 
+
+  //Apresenta os dados, em centimetros, no LCD e na Serial
+  lcd.setCursor(0,0);
+  lcd.print("Cent.: ");
+  lcd.print("        ");
+  lcd.setCursor(7,0);
+  lcd.print(cmMsec);
+
+  Serial.print("Cent: ");
+  Serial.print(cmMsec);
+
+  //Apresenta os dados, em polegadas, no LCD e na Serial  
+  lcd.setCursor(0,1);
+  lcd.print("Pol. : ");
+  lcd.print("        ");
+  lcd.setCursor(7,1);
+  lcd.print(inMsec);
+
+  Serial.print(", Pol. : ");
+  Serial.println(inMsec);
+
+  delay(1000);
 }
 
 
